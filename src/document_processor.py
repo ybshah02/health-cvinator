@@ -14,7 +14,8 @@ class DocumentProcessor:
     def __init__(self):
         self.embeddings = GoogleGenerativeAIEmbeddings(
             model="models/embedding-001",
-            google_api_key=Config.GOOGLE_API_KEY
+            google_api_key=Config.GOOGLE_API_KEY,
+            request_timeout=30
         )
         self.vectorstore = None
         self.text_splitter = RecursiveCharacterTextSplitter(
@@ -34,8 +35,12 @@ class DocumentProcessor:
                     elif file_path.endswith('.txt'):
                         documents.extend(self._load_static_text(file_path))
         
-        if documents:
-            self._create_vectorstore(documents)
+        if documents and Config.ENABLE_VECTOR_SEARCH:
+            try:
+                self._create_vectorstore(documents)
+            except Exception as e:
+                print(f"Warning: Could not create vector store: {e}")
+                print("Static content loaded but vector search disabled")
             
         return len(documents)
     
@@ -48,8 +53,12 @@ class DocumentProcessor:
             elif uploaded_file.type == "text/plain":
                 documents.extend(self._load_text_file(uploaded_file))
         
-        if documents:
-            self._create_vectorstore(documents)
+        if documents and Config.ENABLE_VECTOR_SEARCH:
+            try:
+                self._create_vectorstore(documents)
+            except Exception as e:
+                print(f"Warning: Could not create vector store: {e}")
+                print("Context files loaded but vector search disabled")
             
         return len(documents)
     
@@ -85,19 +94,28 @@ class DocumentProcessor:
             return []
     
     def _create_vectorstore(self, documents: List[Document]):
-        splits = self.text_splitter.split_documents(documents)
-        self.vectorstore = FAISS.from_documents(splits, self.embeddings)
+        try:
+            splits = self.text_splitter.split_documents(documents)
+            self.vectorstore = FAISS.from_documents(splits, self.embeddings)
+        except Exception as e:
+            print(f"Warning: Failed to create vector store: {e}")
+            print("Continuing without vector search capabilities...")
+            self.vectorstore = None
     
     def search_similar_documents(self, query: str) -> str:
         if not self.vectorstore:
             return ""
         
-        relevant_docs = self.vectorstore.similarity_search(
-            query, 
-            k=Config.MAX_SIMILARITY_SEARCH_RESULTS
-        )
-        
-        if relevant_docs:
-            return "\n\n".join([doc.page_content for doc in relevant_docs])
+        try:
+            relevant_docs = self.vectorstore.similarity_search(
+                query, 
+                k=Config.MAX_SIMILARITY_SEARCH_RESULTS
+            )
+            
+            if relevant_docs:
+                return "\n\n".join([doc.page_content for doc in relevant_docs])
+        except Exception as e:
+            print(f"Warning: Vector search failed: {e}")
+            return ""
         
         return ""
