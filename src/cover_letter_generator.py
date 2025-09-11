@@ -66,7 +66,9 @@ class CoverLetterGenerator:
 4. End with a confident & strong closing statement
 5. Ensure formatting is clean, professional, and ATS-friendly
 
-The tone should be professional yet engaging, within one page (250-400 words). Make the cover letter concise, structured, and impactful while keeping the candidate's unique experiences and voice."""
+The tone should be professional yet engaging, within one page (250-400 words). Make the cover letter concise, structured, and impactful while keeping the candidate's unique experiences and voice.
+
+IMPORTANT: Return ONLY plain text without any markdown formatting, HTML tags, or special characters. Do not use **bold**, *italics*, # headers, or any other markdown syntax."""
     
     def _get_context_from_documents(self, resume_text: str, job_description: str) -> str:
         if not self.document_processor.vectorstore:
@@ -218,7 +220,9 @@ The tone should be professional yet engaging, within one page (250-400 words). M
 4. End with a confident & strong closing statement
 5. Ensure formatting is clean, professional, and ATS-friendly
 
-The tone should be professional yet engaging, within one page (250-400 words). Make the cover letter concise, structured, and impactful while keeping the candidate's unique experiences and voice."""
+The tone should be professional yet engaging, within one page (250-400 words). Make the cover letter concise, structured, and impactful while keeping the candidate's unique experiences and voice.
+
+IMPORTANT: Return ONLY plain text without any markdown formatting, HTML tags, or special characters. Do not use **bold**, *italics*, # headers, or any other markdown syntax."""
         
         prompt = f"""
         {system_prompt}
@@ -244,7 +248,9 @@ The tone should be professional yet engaging, within one page (250-400 words). M
     
     def improve_cover_letter_with_prompt(self, cover_letter: str, custom_prompt: str) -> str:
         """Improve an existing cover letter using a custom prompt"""
-        system_prompt = """You are an expert career coach and cover letter writer. Your task is to improve existing cover letters based on specific instructions provided by the user."""
+        system_prompt = """You are an expert career coach and cover letter writer. Your task is to improve existing cover letters based on specific instructions provided by the user.
+
+IMPORTANT: Return ONLY plain text without any markdown formatting, HTML tags, or special characters. Do not use **bold**, *italics*, # headers, or any other markdown syntax."""
         
         prompt = f"""
         {system_prompt}

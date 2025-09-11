@@ -92,7 +92,7 @@ def generate_page():
         st.error("Please set your GOOGLE_API_KEY environment variable")
         st.stop()
     
-    # Lazy load generator and constants
+    # Lazy load generator, constants, and utils
     if 'generator' not in st.session_state:
         ProgressIndicator = get_progress_indicator()
         with st.spinner("Initializing AI components..."):
@@ -106,11 +106,12 @@ def generate_page():
             st.session_state.generator.load_static_content()
             st.session_state.static_content_loaded = True
     
+    # Get constants and utils lazily with caching
+    constants = get_cached_constants()
+    validate_inputs, display_error, display_success, display_warning = get_utils()
+    
     # Main content in a single column for better flow
     st.header("📄 Job Information")
-    
-    # Get constants lazily with caching
-    constants = get_cached_constants()
     
     col_job1, col_job2 = st.columns([2, 1])
     with col_job1:
@@ -201,11 +202,9 @@ def generate_page():
             with st.spinner("Processing uploaded files..."):
                 num_docs = st.session_state.generator.load_context_files(context_files)
                 st.session_state[context_cache_key] = num_docs
-                validate_inputs, display_error, display_success, display_warning = get_utils()
                 display_success(constants['SUCCESS_CONTEXT_PROCESSED'].format(num_docs=num_docs))
         else:
             num_docs = st.session_state[context_cache_key]
-            validate_inputs, display_error, display_success, display_warning = get_utils()
             display_success(constants['SUCCESS_CONTEXT_PROCESSED'].format(num_docs=num_docs))
     
     additional_context = st.text_area(
@@ -220,7 +219,6 @@ def generate_page():
         st.header("🔧 Generate Cover Letter")
         
         if st.button(constants['LABEL_GENERATE_COVER_LETTER'], type="primary", use_container_width=True):
-            validate_inputs, display_error, display_success, display_warning = get_utils()
             is_valid, error_message = validate_inputs(resume_text, job_description, api_key)
             
             if not is_valid:
