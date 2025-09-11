@@ -3,10 +3,58 @@ import os
 import tempfile
 from dotenv import load_dotenv
 
-from src.cover_letter_generator import CoverLetterGenerator
-from src.config import Config
-from src.constants import *
-from src.utils import validate_inputs, display_error, display_success, display_warning
+# Apply performance optimizations
+from src.performance_config import PerformanceConfig
+PerformanceConfig.apply_environment_variables()
+
+# Lazy imports to reduce initial load time
+def get_cover_letter_generator():
+    from src.cover_letter_generator import CoverLetterGenerator
+    return CoverLetterGenerator
+
+def get_config():
+    from src.config import Config
+    return Config
+
+def get_constants():
+    import src.constants as constants_module
+    return {
+        'SUCCESS_STATIC_CONTENT_LOADED': constants_module.SUCCESS_STATIC_CONTENT_LOADED,
+        'SUCCESS_CONTEXT_PROCESSED': constants_module.SUCCESS_CONTEXT_PROCESSED,
+        'SUCCESS_COVER_LETTER_GENERATED': constants_module.SUCCESS_COVER_LETTER_GENERATED,
+        'ERROR_API_KEY_MISSING': constants_module.ERROR_API_KEY_MISSING,
+        'ERROR_RESUME_MISSING': constants_module.ERROR_RESUME_MISSING,
+        'ERROR_GENERATING_COVER_LETTER': constants_module.ERROR_GENERATING_COVER_LETTER,
+        'ERROR_EXTRACTING_JOB_INFO': constants_module.ERROR_EXTRACTING_JOB_INFO,
+        'SUPPORTED_FILE_TYPES': constants_module.SUPPORTED_FILE_TYPES,
+        'PDF_MIME_TYPE': constants_module.PDF_MIME_TYPE,
+        'TEXT_MIME_TYPE': constants_module.TEXT_MIME_TYPE,
+        'DEFAULT_PDF_FILENAME': constants_module.DEFAULT_PDF_FILENAME,
+        'DEFAULT_GEMINI_MODEL': constants_module.DEFAULT_GEMINI_MODEL,
+        'DEFAULT_TEMPERATURE': constants_module.DEFAULT_TEMPERATURE,
+        'LABEL_GENERATE_COVER_LETTER': constants_module.LABEL_GENERATE_COVER_LETTER,
+        'LABEL_DOWNLOAD_PDF': constants_module.LABEL_DOWNLOAD_PDF,
+        'LABEL_JOB_URL': constants_module.LABEL_JOB_URL,
+        'LABEL_JOB_DESCRIPTION': constants_module.LABEL_JOB_DESCRIPTION,
+        'LABEL_RESUME_CONTENT': constants_module.LABEL_RESUME_CONTENT,
+        'LABEL_RESUME_UPLOAD': constants_module.LABEL_RESUME_UPLOAD,
+        'LABEL_ADDITIONAL_CONTEXT': constants_module.LABEL_ADDITIONAL_CONTEXT,
+        'LABEL_COVER_LETTER': constants_module.LABEL_COVER_LETTER,
+        'HELP_JOB_URL': constants_module.HELP_JOB_URL,
+        'HELP_JOB_DESCRIPTION': constants_module.HELP_JOB_DESCRIPTION,
+        'HELP_RESUME_CONTENT': constants_module.HELP_RESUME_CONTENT,
+        'HELP_RESUME_UPLOAD': constants_module.HELP_RESUME_UPLOAD,
+        'HELP_ADDITIONAL_CONTEXT': constants_module.HELP_ADDITIONAL_CONTEXT,
+        'HELP_CONTEXT_FILES': constants_module.HELP_CONTEXT_FILES,
+    }
+
+def get_utils():
+    from src.utils import validate_inputs, display_error, display_success, display_warning
+    return validate_inputs, display_error, display_success, display_warning
+
+def get_progress_indicator():
+    from src.progress_indicator import ProgressIndicator
+    return ProgressIndicator
 
 load_dotenv()
 
@@ -15,6 +63,11 @@ st.set_page_config(
     page_icon="📝",
     layout="wide"
 )
+
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+def get_cached_constants():
+    """Cache constants to avoid reloading"""
+    return get_constants()
 
 def main():
     st.sidebar.title("Leks CV Generator")
@@ -39,19 +92,31 @@ def generate_page():
         st.error("Please set your GOOGLE_API_KEY environment variable")
         st.stop()
     
+    # Lazy load generator and constants
     if 'generator' not in st.session_state:
-        st.session_state.generator = CoverLetterGenerator()
+        ProgressIndicator = get_progress_indicator()
+        with st.spinner("Initializing AI components..."):
+            CoverLetterGenerator = get_cover_letter_generator()
+            st.session_state.generator = CoverLetterGenerator()
     
-    st.session_state.generator.load_static_content()
+    # Load static content only once and cache it
+    if 'static_content_loaded' not in st.session_state:
+        ProgressIndicator = get_progress_indicator()
+        with st.spinner("Loading templates and examples..."):
+            st.session_state.generator.load_static_content()
+            st.session_state.static_content_loaded = True
     
     # Main content in a single column for better flow
     st.header("📄 Job Information")
     
+    # Get constants lazily with caching
+    constants = get_cached_constants()
+    
     col_job1, col_job2 = st.columns([2, 1])
     with col_job1:
         job_url = st.text_input(
-            LABEL_JOB_URL,
-            help=HELP_JOB_URL
+            constants['LABEL_JOB_URL'],
+            help=constants['HELP_JOB_URL']
         )
     with col_job2:
         job_title = st.text_input(
@@ -65,9 +130,9 @@ def generate_page():
     )
     
     job_description = st.text_area(
-        LABEL_JOB_DESCRIPTION,
+        constants['LABEL_JOB_DESCRIPTION'],
         height=200,
-        help=HELP_JOB_DESCRIPTION
+        help=constants['HELP_JOB_DESCRIPTION']
     )
     
     if job_url and not job_description:
@@ -84,28 +149,37 @@ def generate_page():
     st.header("📋 Your Resume")
     
     resume_file = st.file_uploader(
-        LABEL_RESUME_UPLOAD,
-        type=SUPPORTED_FILE_TYPES,
-        help=HELP_RESUME_UPLOAD
+        constants['LABEL_RESUME_UPLOAD'],
+        type=constants['SUPPORTED_FILE_TYPES'],
+        help=constants['HELP_RESUME_UPLOAD']
     )
     
     resume_text = ""
     if resume_file:
-        with st.spinner("Processing resume file..."):
-            if resume_file.type == "application/pdf":
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                    tmp_file.write(resume_file.getvalue())
-                    tmp_file_path = tmp_file.name
+        # Cache processed resume content to avoid reprocessing
+        file_hash = hash(resume_file.getvalue())
+        cache_key = f"resume_{file_hash}"
+        
+        if cache_key not in st.session_state:
+            with st.spinner("Processing resume file..."):
+                if resume_file.type == "application/pdf":
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+                        tmp_file.write(resume_file.getvalue())
+                        tmp_file_path = tmp_file.name
+                    
+                    try:
+                        from langchain.document_loaders import PyPDFLoader
+                        loader = PyPDFLoader(tmp_file_path)
+                        docs = loader.load()
+                        resume_text = "\n".join([doc.page_content for doc in docs])
+                    finally:
+                        os.unlink(tmp_file_path)
+                elif resume_file.type == "text/plain":
+                    resume_text = resume_file.getvalue().decode("utf-8")
                 
-                try:
-                    from langchain.document_loaders import PyPDFLoader
-                    loader = PyPDFLoader(tmp_file_path)
-                    docs = loader.load()
-                    resume_text = "\n".join([doc.page_content for doc in docs])
-                finally:
-                    os.unlink(tmp_file_path)
-            elif resume_file.type == "text/plain":
-                resume_text = resume_file.getvalue().decode("utf-8")
+                st.session_state[cache_key] = resume_text
+        else:
+            resume_text = st.session_state[cache_key]
         
         # Resume content is loaded but not displayed to keep UI clean
     
@@ -113,20 +187,31 @@ def generate_page():
     
     context_files = st.file_uploader(
         "Upload context files",
-        type=SUPPORTED_FILE_TYPES,
+        type=constants['SUPPORTED_FILE_TYPES'],
         accept_multiple_files=True,
-        help=HELP_CONTEXT_FILES
+        help=constants['HELP_CONTEXT_FILES']
     )
     
     if context_files:
-        with st.spinner("Processing uploaded files..."):
-            num_docs = st.session_state.generator.load_context_files(context_files)
-            display_success(SUCCESS_CONTEXT_PROCESSED.format(num_docs=num_docs))
+        # Cache context files processing
+        files_hash = hash(tuple(f.getvalue() for f in context_files))
+        context_cache_key = f"context_{files_hash}"
+        
+        if context_cache_key not in st.session_state:
+            with st.spinner("Processing uploaded files..."):
+                num_docs = st.session_state.generator.load_context_files(context_files)
+                st.session_state[context_cache_key] = num_docs
+                validate_inputs, display_error, display_success, display_warning = get_utils()
+                display_success(constants['SUCCESS_CONTEXT_PROCESSED'].format(num_docs=num_docs))
+        else:
+            num_docs = st.session_state[context_cache_key]
+            validate_inputs, display_error, display_success, display_warning = get_utils()
+            display_success(constants['SUCCESS_CONTEXT_PROCESSED'].format(num_docs=num_docs))
     
     additional_context = st.text_area(
-        LABEL_ADDITIONAL_CONTEXT,
+        constants['LABEL_ADDITIONAL_CONTEXT'],
         height=100,
-        help=HELP_ADDITIONAL_CONTEXT
+        help=constants['HELP_ADDITIONAL_CONTEXT']
     )
     
     col_left, col_right = st.columns([1, 1])
@@ -134,7 +219,8 @@ def generate_page():
     with col_left:
         st.header("🔧 Generate Cover Letter")
         
-        if st.button(LABEL_GENERATE_COVER_LETTER, type="primary", use_container_width=True):
+        if st.button(constants['LABEL_GENERATE_COVER_LETTER'], type="primary", use_container_width=True):
+            validate_inputs, display_error, display_success, display_warning = get_utils()
             is_valid, error_message = validate_inputs(resume_text, job_description, api_key)
             
             if not is_valid:
@@ -152,24 +238,24 @@ def generate_page():
                         )
                         
                         if cover_letter:
-                            display_success(SUCCESS_COVER_LETTER_GENERATED)
+                            display_success(constants['SUCCESS_COVER_LETTER_GENERATED'])
                             
                             st.header("📝 Generated Cover Letter")
-                            st.text_area(LABEL_COVER_LETTER, value=cover_letter, height=400)
+                            st.text_area(constants['LABEL_COVER_LETTER'], value=cover_letter, height=400)
                             
                             pdf_data = st.session_state.generator.create_pdf(cover_letter)
                             
                             st.download_button(
-                                label=LABEL_DOWNLOAD_PDF,
+                                label=constants['LABEL_DOWNLOAD_PDF'],
                                 data=pdf_data,
-                                file_name=DEFAULT_PDF_FILENAME,
-                                mime=PDF_MIME_TYPE,
+                                file_name=constants['DEFAULT_PDF_FILENAME'],
+                                mime=constants['PDF_MIME_TYPE'],
                                 use_container_width=True
                             )
                         else:
                             display_error("Failed to generate cover letter. Please check your inputs and try again.")
                     except Exception as e:
-                        display_error(ERROR_GENERATING_COVER_LETTER.format(error=str(e)))
+                        display_error(constants['ERROR_GENERATING_COVER_LETTER'].format(error=str(e)))
 
 def improve_page():
     st.title("✨ Improve Existing Cover Letter")
@@ -181,10 +267,17 @@ def improve_page():
         st.error("Please set your GOOGLE_API_KEY environment variable")
         st.stop()
     
+    # Lazy load generator and constants
     if 'generator' not in st.session_state:
-        st.session_state.generator = CoverLetterGenerator()
+        with st.spinner("Initializing AI components..."):
+            CoverLetterGenerator = get_cover_letter_generator()
+            st.session_state.generator = CoverLetterGenerator()
     
-    st.session_state.generator.load_static_content()
+    # Load static content only once and cache it
+    if 'static_content_loaded' not in st.session_state:
+        with st.spinner("Loading templates and examples..."):
+            st.session_state.generator.load_static_content()
+            st.session_state.static_content_loaded = True
     
     st.header("📄 Upload Cover Letter")
     
@@ -206,7 +299,7 @@ def improve_page():
                         tmp_file_path = tmp_file.name
                     
                     try:
-                        from PyPDF2 import PdfReader
+                        from pypdf import PdfReader
                         reader = PdfReader(tmp_file_path)
                         existing_cover_letter = "\n".join([page.extract_text() for page in reader.pages])
                     finally:
@@ -254,6 +347,7 @@ def improve_page():
                     )
                     
                     if improved_letter:
+                        validate_inputs, display_error, display_success, display_warning = get_utils()
                         display_success("✅ Cover letter improved successfully!")
                         
                         st.header("📝 Improved Cover Letter")
@@ -261,18 +355,22 @@ def improve_page():
                         
                         pdf_data = st.session_state.generator.create_pdf(improved_letter)
                         
+                        constants = get_constants()
                         st.download_button(
-                            label=LABEL_DOWNLOAD_PDF,
+                            label=constants['LABEL_DOWNLOAD_PDF'],
                             data=pdf_data,
                             file_name="improved_cover_letter.pdf",
-                            mime=PDF_MIME_TYPE,
+                            mime=constants['PDF_MIME_TYPE'],
                             use_container_width=True
                         )
                     else:
+                        validate_inputs, display_error, display_success, display_warning = get_utils()
                         display_error("Failed to improve cover letter. Please try again.")
                 except Exception as e:
+                    validate_inputs, display_error, display_success, display_warning = get_utils()
                     display_error(f"Error improving cover letter: {str(e)}")
         else:
+            validate_inputs, display_error, display_success, display_warning = get_utils()
             display_error("Please upload a cover letter file or paste your cover letter text.")
 
 if __name__ == "__main__":

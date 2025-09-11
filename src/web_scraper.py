@@ -68,8 +68,8 @@ class WebScraper:
             driver = WebScraper._setup_selenium_driver()
             driver.get(job_url)
             
-            # Wait for page to load
-            WebDriverWait(driver, 10).until(
+            # Reduced wait time for faster response
+            WebDriverWait(driver, 5).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
             
@@ -177,8 +177,8 @@ class WebScraper:
             'Upgrade-Insecure-Requests': '1',
         }
         
-        # Add a small delay to avoid being blocked
-        time.sleep(random.uniform(1, 3))
+        # Reduced delay for faster response
+        time.sleep(random.uniform(0.5, 1.5))
         
         response = requests.get(job_url, headers=headers, timeout=Config.REQUEST_TIMEOUT)
         

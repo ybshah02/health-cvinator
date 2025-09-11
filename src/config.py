@@ -13,7 +13,7 @@ class Config:
     MAX_SIMILARITY_SEARCH_RESULTS = 3
     ENABLE_VECTOR_SEARCH = True
     
-    REQUEST_TIMEOUT = 10
+    REQUEST_TIMEOUT = 5  # Reduced from 10 to 5 seconds for faster response
     MAX_JOB_DESCRIPTION_LENGTH = 3000
     
     PDF_PAGE_SIZE = "letter"

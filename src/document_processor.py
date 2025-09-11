@@ -22,8 +22,16 @@ class DocumentProcessor:
             chunk_size=Config.CHUNK_SIZE,
             chunk_overlap=Config.CHUNK_OVERLAP
         )
+        self._static_documents = []
+        self._context_documents = []
+        self._static_vectorstore_created = False
+        self._context_vectorstore_created = False
     
     def load_static_content(self) -> int:
+        # Only load static content once
+        if self._static_documents:
+            return len(self._static_documents)
+            
         documents = []
         static_path = "static_content"
         
@@ -35,9 +43,12 @@ class DocumentProcessor:
                     elif file_path.endswith('.txt'):
                         documents.extend(self._load_static_text(file_path))
         
-        if documents and Config.ENABLE_VECTOR_SEARCH:
+        self._static_documents = documents
+        
+        if documents and Config.ENABLE_VECTOR_SEARCH and not self._static_vectorstore_created:
             try:
                 self._create_vectorstore(documents)
+                self._static_vectorstore_created = True
             except Exception as e:
                 print(f"Warning: Could not create vector store: {e}")
                 print("Static content loaded but vector search disabled")
@@ -45,6 +56,13 @@ class DocumentProcessor:
         return len(documents)
     
     def load_context_files(self, files) -> int:
+        # Create a hash of the files to check if they've changed
+        files_hash = hash(tuple(f.getvalue() for f in files))
+        
+        # Check if we already have these context files processed
+        if hasattr(self, '_context_files_hash') and self._context_files_hash == files_hash:
+            return len(self._context_documents)
+        
         documents = []
         
         for uploaded_file in files:
@@ -53,9 +71,15 @@ class DocumentProcessor:
             elif uploaded_file.type == "text/plain":
                 documents.extend(self._load_text_file(uploaded_file))
         
-        if documents and Config.ENABLE_VECTOR_SEARCH:
+        self._context_documents = documents
+        self._context_files_hash = files_hash
+        
+        # Combine with static documents for vector search
+        all_documents = self._static_documents + documents
+        
+        if all_documents and Config.ENABLE_VECTOR_SEARCH:
             try:
-                self._create_vectorstore(documents)
+                self._create_vectorstore(all_documents)
             except Exception as e:
                 print(f"Warning: Could not create vector store: {e}")
                 print("Context files loaded but vector search disabled")
