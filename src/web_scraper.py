@@ -138,32 +138,19 @@ class WebScraper:
     
     @staticmethod
     def extract_job_info(job_url: str) -> str:
-        # For Indeed and LinkedIn, try Selenium first, but fall back gracefully
-        if "indeed.com" in job_url.lower() or "linkedin.com" in job_url.lower():
+        # Always try requests first (works in Streamlit Cloud)
+        try:
+            return WebScraper._extract_with_requests(job_url)
+        except Exception as requests_error:
+            # If requests fails, try Selenium as fallback (only if available)
             try:
                 return WebScraper._extract_with_selenium(job_url)
             except Exception as selenium_error:
-                # If Selenium fails, try requests as fallback
-                try:
-                    return WebScraper._extract_with_requests(job_url)
-                except Exception as requests_error:
-                    # If both fail, provide helpful error message
-                    if "Chrome browser not found" in str(selenium_error):
-                        raise Exception("Chrome browser not installed. Please install Google Chrome or copy and paste the job description manually.")
-                    elif "Failed to setup browser" in str(selenium_error):
-                        raise Exception("Browser setup failed. Please copy and paste the job description manually.")
-                    else:
-                        raise Exception(f"Could not extract job information from this site. Please copy and paste the job description manually.")
-        else:
-            # For other sites, try requests first (faster)
-            try:
-                return WebScraper._extract_with_requests(job_url)
-            except Exception as requests_error:
-                # If requests fails, try Selenium as fallback
-                try:
-                    return WebScraper._extract_with_selenium(job_url)
-                except Exception as selenium_error:
-                    raise Exception(f"Could not extract job information. Please copy and paste the job description manually.")
+                # Provide helpful error message based on the type of failure
+                if "Chrome browser not found" in str(selenium_error) or "Failed to setup browser" in str(selenium_error):
+                    raise Exception("Unable to extract job information automatically. Please copy and paste the job description manually into the text area below.")
+                else:
+                    raise Exception("Could not extract job information from this URL. Please copy and paste the job description manually into the text area below.")
     
     @staticmethod
     def _extract_with_requests(job_url: str) -> str:
@@ -195,14 +182,36 @@ class WebScraper:
         for script in soup(["script", "style", "nav", "header", "footer"]):
             script.decompose()
         
-        # Try to find job-specific content
-        job_content = soup.find('div', {'id': 'jobDescriptionText'}) or \
-                     soup.find('div', {'class': 'jobsearch-jobDescriptionText'}) or \
-                     soup.find('div', {'class': 'job-description'}) or \
-                     soup.find('div', {'class': 'description'}) or \
-                     soup.find('main') or \
-                     soup.find('article') or \
-                     soup
+        # Try to find job-specific content with more comprehensive selectors
+        job_content = None
+        
+        # Indeed.com specific selectors
+        if 'indeed.com' in job_url.lower():
+            job_content = soup.find('div', {'id': 'jobDescriptionText'}) or \
+                         soup.find('div', {'class': 'jobsearch-jobDescriptionText'}) or \
+                         soup.find('div', {'class': 'jobsearch-jobDescription'})
+        
+        # LinkedIn specific selectors
+        elif 'linkedin.com' in job_url.lower():
+            job_content = soup.find('div', {'class': 'description__text'}) or \
+                         soup.find('div', {'class': 'jobs-description-content__text'}) or \
+                         soup.find('div', {'class': 'jobs-box__html-content'})
+        
+        # Glassdoor specific selectors
+        elif 'glassdoor.com' in job_url.lower():
+            job_content = soup.find('div', {'class': 'jobDescriptionContent'}) or \
+                         soup.find('div', {'class': 'jobDescription'})
+        
+        # Generic selectors for other sites
+        if not job_content:
+            job_content = soup.find('div', {'class': 'job-description'}) or \
+                         soup.find('div', {'class': 'description'}) or \
+                         soup.find('div', {'class': 'job-details'}) or \
+                         soup.find('div', {'class': 'job-content'}) or \
+                         soup.find('main') or \
+                         soup.find('article') or \
+                         soup.find('div', {'class': 'content'}) or \
+                         soup
         
         text = job_content.get_text()
         
@@ -211,15 +220,26 @@ class WebScraper:
         chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
         text = ' '.join(chunk for chunk in chunks if chunk)
         
-        # Remove common unwanted text
+        # Remove common unwanted text and navigation elements
         unwanted_phrases = [
             'cookie', 'privacy policy', 'terms of service', 'sign in', 'log in',
             'create account', 'apply now', 'share this job', 'save job',
-            'indeed.com', 'linkedin.com', 'glassdoor.com'
+            'indeed.com', 'linkedin.com', 'glassdoor.com', 'monster.com',
+            'ziprecruiter.com', 'careerbuilder.com', 'skip to main content',
+            'navigation', 'menu', 'footer', 'header', 'sidebar', 'advertisement',
+            'sponsored', 'recommended jobs', 'similar jobs', 'company reviews'
         ]
         
+        # Remove unwanted phrases (case insensitive)
+        text_lower = text.lower()
         for phrase in unwanted_phrases:
-            text = text.replace(phrase, '')
+            if phrase in text_lower:
+                # Find and remove the phrase (case insensitive)
+                import re
+                text = re.sub(re.escape(phrase), '', text, flags=re.IGNORECASE)
+        
+        # Clean up extra whitespace
+        text = ' '.join(text.split())
         
         if len(text.strip()) < 100:
             raise Exception("Could not extract sufficient job information from the page.")

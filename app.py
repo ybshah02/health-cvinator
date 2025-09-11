@@ -142,10 +142,12 @@ def generate_page():
                 extracted_info = st.session_state.generator.extract_job_info(job_url)
                 if extracted_info:
                     job_description = extracted_info
+                    st.success("✅ Job description extracted successfully!")
                     st.text_area("Extracted Job Description", value=job_description, height=200)
             except Exception as e:
                 st.warning(f"⚠️ {str(e)}")
                 st.info("💡 **Tip**: You can still generate a cover letter by manually copying and pasting the job description into the text area above.")
+                st.markdown("**Supported job sites:** Indeed, LinkedIn, Glassdoor, and most company career pages")
     
     st.header("📋 Your Resume")
     
